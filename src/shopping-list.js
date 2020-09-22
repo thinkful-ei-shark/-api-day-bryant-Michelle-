@@ -1,13 +1,14 @@
 import $ from 'jquery';
 
 import store from './store';
+import api from './api';
 
 const generateItemElement = function (item) {
   let itemTitle = `<span class="shopping-item shopping-item__checked">${item.name}</span>`;
   if (!item.checked) {
     itemTitle = `
       <form class="js-edit-item">
-        <input class="shopping-item" type="text" value="${item.name}" />
+        <input class="shopping-item" type="text" value="${item.name}" required />
       </form>
     `;
   }
@@ -31,7 +32,34 @@ const generateShoppingItemsString = function (shoppingList) {
   return items.join('');
 };
 
+const generateError = function (message) {
+  return `
+      <section class="error-content">
+        <button id="cancel-error">X</button>
+        <p>${message}</p>
+      </section>
+    `;
+};
+
+const renderError = function () {
+  if (store.error) {
+    const el = generateError(store.error);
+    $('.error-container').html(el);
+  } else {
+    $('.error-container').empty();
+  }
+};
+
+const handleCloseError = function () {
+  $('.error-container').on('click', '#cancel-error', () => {
+    store.setError(null);
+    renderError();
+  });
+};
+
 const render = function () {
+  renderError();
+
   // Filter item list if store prop is true by item.checked === false
   let items = [...store.items];
   if (store.hideCheckedItems) {
@@ -50,8 +78,15 @@ const handleNewItemSubmit = function () {
     event.preventDefault();
     const newItemName = $('.js-shopping-list-entry').val();
     $('.js-shopping-list-entry').val('');
-    store.addItem(newItemName);
-    render();
+    api.createItem(newItemName)
+      .then((newItem) => {
+        store.addItem(newItem);
+        render();
+      })
+      .catch((error) => {
+        store.setError(error.message);
+        renderError();
+      });
   });
 };
 
@@ -62,14 +97,19 @@ const getItemIdFromElement = function (item) {
 };
 
 const handleDeleteItemClicked = function () {
-  // like in `handleItemCheckClicked`, we use event delegation
   $('.js-shopping-list').on('click', '.js-item-delete', event => {
-    // get the index of the item in store.items
     const id = getItemIdFromElement(event.currentTarget);
-    // delete the item
-    store.findAndDelete(id);
-    // render the updated shopping list
-    render();
+
+    api.deleteItem(id)
+      .then(() => {
+        store.findAndDelete(id);
+        render();
+      })
+      .catch((error) => {
+        console.log(error);
+        store.setError(error.message);
+        renderError();
+      });
   });
 };
 
@@ -78,16 +118,33 @@ const handleEditShoppingItemSubmit = function () {
     event.preventDefault();
     const id = getItemIdFromElement(event.currentTarget);
     const itemName = $(event.currentTarget).find('.shopping-item').val();
-    store.findAndUpdateName(id, itemName);
-    render();
+
+    api.updateItem(id, { name: itemName })
+      .then(() => {
+        store.findAndUpdate(id, { name: itemName });
+        render();
+      })
+      .catch((error) => {
+        console.log(error);
+        store.setError(error.message);
+        renderError();
+      });
   });
 };
 
 const handleItemCheckClicked = function () {
   $('.js-shopping-list').on('click', '.js-item-toggle', event => {
     const id = getItemIdFromElement(event.currentTarget);
-    store.findAndToggleChecked(id);
-    render();
+    const item = store.findById(id);
+    api.updateItem(id, { checked: !item.checked })
+      .then(() => {
+        store.findAndUpdate(id, { checked: !item.checked });
+        render();
+      })
+      .catch((error) => {
+        store.setError(error.message);
+        renderError();
+      });
   });
 };
 
@@ -104,9 +161,606 @@ const bindEventListeners = function () {
   handleDeleteItemClicked();
   handleEditShoppingItemSubmit();
   handleToggleFilterClick();
+  handleCloseError();
 };
+
 // This object contains the only exposed methods from this module:
 export default {
   render,
   bindEventListeners
 };
+// import $ from 'jquery';
+
+// import store from './store';
+// import api from './api';
+
+// const generateItemElement = function (item) {
+//   let itemTitle = `<span class="shopping-item shopping-item__checked">${item.name}</span>`;
+//   if (!item.checked) {
+//     itemTitle = `
+//       <form class="js-edit-item">
+//         <input class="shopping-item" type="text" value="${item.name}" />
+//       </form>
+//     `;
+//   }
+
+//   return `
+//     <li class="js-item-element" data-item-id="${item.id}">
+//       ${itemTitle}
+//       <div class="shopping-item-controls">
+//         <button class="shopping-item-toggle js-item-toggle">
+//           <span class="button-label">check</span>
+//         </button>
+//         <button class="shopping-item-delete js-item-delete">
+//           <span class="button-label">delete</span>
+//         </button>
+//       </div>
+//     </li>`;
+// };
+
+// const generateShoppingItemsString = function (shoppingList) {
+//   const items = shoppingList.map((item) => generateItemElement(item));
+//   return items.join('');
+// };
+
+// const render = function () {
+//   // Filter item list if store prop is true by item.checked === false
+//   let items = [...store.items];
+//   if (store.hideCheckedItems) {
+//     items = items.filter(item => !item.checked);
+//   }
+
+//   // render the shopping list in the DOM
+//   const shoppingListItemsString = generateShoppingItemsString(items);
+
+//   // insert that HTML into the DOM
+//   $('.js-shopping-list').html(shoppingListItemsString);
+// };
+
+// const handleNewItemSubmit = function () {
+//   $('#js-shopping-list-form').submit(function (event) {
+//     event.preventDefault();
+//     const newItemName = $('.js-shopping-list-entry').val();
+//     $('.js-shopping-list-entry').val('');
+
+//     api.createItem(newItemName)
+//       .then(res => res.json())
+//       .then((newItem) => {
+//         store.addItem(newItem);
+//         render();
+//       });
+//   });
+// };
+
+// const getItemIdFromElement = function (item) {
+//   return $(item)
+//     .closest('.js-item-element')
+//     .data('item-id');
+// };
+
+// const handleDeleteItemClicked = function () {
+//   // like in `handleItemCheckClicked`, we use event delegation
+//   $('.js-shopping-list').on('click', '.js-item-delete', event => {
+//     // get the index of the item in store.items
+//     const id = getItemIdFromElement(event.currentTarget);
+//     // delete the item
+//     store.findAndDelete(id);
+//     // render the updated shopping list
+//     render();
+//   });
+// };
+
+// const handleEditShoppingItemSubmit = function () {
+//   $('.js-shopping-list').on('submit', '.js-edit-item', event => {
+//     event.preventDefault();
+//     const id = getItemIdFromElement(event.currentTarget);
+//     const itemName = $(event.currentTarget).find('.shopping-item').val();
+//     api.updateItem(id, { name: itemName })
+//       .then(() => {
+//         store.findAndUpdate(id, { name: itemName });
+//         render();
+//       });
+//   });
+// };
+
+// const handleItemCheckClicked = function () {
+//   $('.js-shopping-list').on('click', '.js-item-toggle', event => {
+//     const id = getItemIdFromElement(event.currentTarget);
+//     const item = store.findById(id);
+
+//     api.updateItem(id, { checked: !item.checked })
+//       .then(() => {
+//         store.findAndUpdate(id, { checked: !item.checked });
+//         render();
+//       });
+//   });
+// };
+
+// const handleToggleFilterClick = function () {
+//   $('.js-filter-checked').click(() => {
+//     store.toggleCheckedFilter();
+//     render();
+//   });
+// };
+
+// const bindEventListeners = function () {
+//   handleNewItemSubmit();
+//   handleItemCheckClicked();
+//   handleDeleteItemClicked();
+//   handleEditShoppingItemSubmit();
+//   handleToggleFilterClick();
+// };
+// // This object contains the only exposed methods from this module:
+// export default {
+//   render,
+//   bindEventListeners
+// };
+// // import $ from 'jquery';
+
+// // import store from './store';
+// // import api from './api';
+
+// // const generateItemElement = function (item) {
+// //   let itemTitle = `<span class="shopping-item shopping-item__checked">${item.name}</span>`;
+// //   if (!item.checked) {
+// //     itemTitle = `
+// //       <form class="js-edit-item">
+// //         <input class="shopping-item" type="text" value="${item.name}" />
+// //       </form>
+// //     `;
+// //   }
+
+// //   return `
+// //     <li class="js-item-element" data-item-id="${item.id}">
+// //       ${itemTitle}
+// //       <div class="shopping-item-controls">
+// //         <button class="shopping-item-toggle js-item-toggle">
+// //           <span class="button-label">check</span>
+// //         </button>
+// //         <button class="shopping-item-delete js-item-delete">
+// //           <span class="button-label">delete</span>
+// //         </button>
+// //       </div>
+// //     </li>`;
+// // };
+
+// // const generateShoppingItemsString = function (shoppingList) {
+// //   const items = shoppingList.map((item) => generateItemElement(item));
+// //   return items.join('');
+// // };
+
+// // const render = function () {
+// //   // Filter item list if store prop is true by item.checked === false
+// //   let items = [...store.items];
+// //   if (store.hideCheckedItems) {
+// //     items = items.filter(item => !item.checked);
+// //   }
+
+// //   // render the shopping list in the DOM
+// //   const shoppingListItemsString = generateShoppingItemsString(items);
+
+// //   // insert that HTML into the DOM
+// //   $('.js-shopping-list').html(shoppingListItemsString);
+// // };
+
+// // const handleNewItemSubmit = function () {
+// //   $('#js-shopping-list-form').submit(function (event) {
+// //     event.preventDefault();
+// //     const newItemName = $('.js-shopping-list-entry').val();
+// //     $('.js-shopping-list-entry').val('');
+
+// //     api.createItem(newItemName)
+// //       .then(res => res.json())
+// //       .then((newItem) => {
+// //         store.addItem(newItem);
+// //         render();
+// //       });
+// //   });
+// // };
+
+// // const getItemIdFromElement = function (item) {
+// //   return $(item)
+// //     .closest('.js-item-element')
+// //     .data('item-id');
+// // };
+
+// // const handleDeleteItemClicked = function () {
+// //   // like in `handleItemCheckClicked`, we use event delegation
+// //   $('.js-shopping-list').on('click', '.js-item-delete', event => {
+// //     // get the index of the item in store.items
+// //     const id = getItemIdFromElement(event.currentTarget);
+// //     // delete the item
+// //     store.findAndDelete(id);
+// //     // render the updated shopping list
+// //     render();
+// //   });
+// // };
+
+// // const handleEditShoppingItemSubmit = function () {
+// //   $('.js-shopping-list').on('submit', '.js-edit-item', event => {
+// //     event.preventDefault();
+// //     const id = getItemIdFromElement(event.currentTarget);
+// //     const itemName = $(event.currentTarget).find('.shopping-item').val();
+// //     render();
+// //   });
+// // };
+
+// // const handleItemCheckClicked = function () {
+// //   $('.js-shopping-list').on('click', '.js-item-toggle', event => {
+// //     const id = getItemIdFromElement(event.currentTarget);
+// //     render();
+// //   });
+// // };
+
+// // const handleToggleFilterClick = function () {
+// //   $('.js-filter-checked').click(() => {
+// //     store.toggleCheckedFilter();
+// //     render();
+// //   });
+// // };
+
+// // const bindEventListeners = function () {
+// //   handleNewItemSubmit();
+// //   handleItemCheckClicked();
+// //   handleDeleteItemClicked();
+// //   handleEditShoppingItemSubmit();
+// //   handleToggleFilterClick();
+// // };
+// // // This object contains the only exposed methods from this module:
+// // export default {
+// //   render,
+// //   bindEventListeners
+// // };
+
+// // // import $ from 'jquery';
+
+// // // import store from './store';
+
+// // // import api from './api';
+
+// // // const generateItemElement = function (item) {
+// // //   let itemTitle = `<span class="shopping-item shopping-item__checked">${item.name}</span>`;
+// // //   if (!item.checked) {
+// // //     itemTitle = `
+// // //       <form class="js-edit-item">
+// // //         <input class="shopping-item" type="text" value="${item.name}" />
+// // //       </form>
+// // //     `;
+// // //   }
+
+// // //   return `
+// // //     <li class="js-item-element" data-item-id="${item.id}">
+// // //       ${itemTitle}
+// // //       <div class="shopping-item-controls">
+// // //         <button class="shopping-item-toggle js-item-toggle">
+// // //           <span class="button-label">check</span>
+// // //         </button>
+// // //         <button class="shopping-item-delete js-item-delete">
+// // //           <span class="button-label">delete</span>
+// // //         </button>
+// // //       </div>
+// // //     </li>`;
+// // // };
+
+// // // const generateShoppingItemsString = function (shoppingList) {
+// // //   const items = shoppingList.map((item) => generateItemElement(item));
+// // //   return items.join('');
+// // // };
+
+// // // const render = function () {
+// // //   // Filter item list if store prop is true by item.checked === false
+// // //   let items = [...store.items];
+// // //   if (store.hideCheckedItems) {
+// // //     items = items.filter(item => !item.checked);
+// // //   }
+
+// // //   // render the shopping list in the DOM
+// // //   const shoppingListItemsString = generateShoppingItemsString(items);
+
+// // //   // insert that HTML into the DOM
+// // //   $('.js-shopping-list').html(shoppingListItemsString);
+// // // };
+
+// // // const handleNewItemSubmit = function () {
+// // //   $('#js-shopping-list-form').submit(function (event) {
+// // //     event.preventDefault();
+// // //     const newItemName = $('.js-shopping-list-entry').val();
+// // //     $('.js-shopping-list-entry').val('');
+// // //     // store.addItem(newItemName);
+// // //     // render();
+
+// // //     api.createItem(newItemName)
+// // //       .then(res => res.json())
+// // //       .then((newItem)=> {
+// // //         store.addItem(newItem);
+// // //         render();
+// // //       });
+// // //   });
+// // // };
+
+
+
+// // // const getItemIdFromElement = function (item) {
+// // //   return $(item)
+// // //     .closest('.js-item-element')
+// // //     .data('item-id');
+// // // };
+
+// // // const handleDeleteItemClicked = function () {
+// // //   // like in `handleItemCheckClicked`, we use event delegation
+// // //   $('.js-shopping-list').on('click', '.js-item-delete', event => {
+// // //     // get the index of the item in store.items
+// // //     const id = getItemIdFromElement(event.currentTarget);
+// // //     // delete the item
+// // //     store.findAndDelete(id);
+// // //     // render the updated shopping list
+// // //     render();
+// // //   });
+// // // };
+
+// // // const handleEditShoppingItemSubmit = function () {
+// // //   $('.js-shopping-list').on('submit', '.js-edit-item', event => {
+// // //     event.preventDefault();
+// // //     const id = getItemIdFromElement(event.currentTarget);
+// // //     const itemName = $(event.currentTarget).find('.shopping-item').val();
+// // //     store.findAndUpdateName(id, itemName);
+// // //     render();
+// // //   });
+// // // };
+
+// // // const handleItemCheckClicked = function () {
+// // //   $('.js-shopping-list').on('click', '.js-item-toggle', event => {
+// // //     const id = getItemIdFromElement(event.currentTarget);
+// // //     store.findAndToggleChecked(id);
+// // //     render();
+// // //   });
+// // // };
+
+// // // const handleToggleFilterClick = function () {
+// // //   $('.js-filter-checked').click(() => {
+// // //     store.toggleCheckedFilter();
+// // //     render();
+// // //   });
+// // // };
+
+// // // const bindEventListeners = function () {
+// // //   handleNewItemSubmit();
+// // //   handleItemCheckClicked();
+// // //   handleDeleteItemClicked();
+// // //   handleEditShoppingItemSubmit();
+// // //   handleToggleFilterClick();
+// // // };
+// // // // This object contains the only exposed methods from this module:
+// // // export default {
+// // //   render,
+// // //   bindEventListeners
+// // // };
+
+
+// // // // import $ from 'jquery';
+
+// // // // import store from './store';
+
+// // // // const generateItemElement = function (item) {
+// // // //   let itemTitle = `<span class="shopping-item shopping-item__checked">${item.name}</span>`;
+// // // //   if (!item.checked) {
+// // // //     itemTitle = `
+// // // //       <form class="js-edit-item">
+// // // //         <input class="shopping-item" type="text" value="${item.name}" />
+// // // //       </form>
+// // // //     `;
+// // // //   }
+
+// // // //   return `
+// // // //     <li class="js-item-element" data-item-id="${item.id}">
+// // // //       ${itemTitle}
+// // // //       <div class="shopping-item-controls">
+// // // //         <button class="shopping-item-toggle js-item-toggle">
+// // // //           <span class="button-label">check</span>
+// // // //         </button>
+// // // //         <button class="shopping-item-delete js-item-delete">
+// // // //           <span class="button-label">delete</span>
+// // // //         </button>
+// // // //       </div>
+// // // //     </li>`;
+// // // // };
+
+// // // // const generateShoppingItemsString = function (shoppingList) {
+// // // //   const items = shoppingList.map((item) => generateItemElement(item));
+// // // //   return items.join('');
+// // // // };
+
+// // // // const render = function () {
+// // // //   // Filter item list if store prop is true by item.checked === false
+// // // //   let items = [...store.items];
+// // // //   if (store.hideCheckedItems) {
+// // // //     items = items.filter(item => !item.checked);
+// // // //   }
+
+// // // //   // render the shopping list in the DOM
+// // // //   const shoppingListItemsString = generateShoppingItemsString(items);
+
+// // // //   // insert that HTML into the DOM
+// // // //   $('.js-shopping-list').html(shoppingListItemsString);
+// // // // };
+
+// // // // const handleNewItemSubmit = function () {
+// // // //   $('#js-shopping-list-form').submit(function (event) {
+// // // //     event.preventDefault();
+// // // //     const newItemName = $('.js-shopping-list-entry').val();
+// // // //     $('.js-shopping-list-entry').val('');
+// // // //     store.addItem(newItemName);
+// // // //     render();
+// // // //   });
+// // // // };
+
+// // // // const getItemIdFromElement = function (item) {
+// // // //   return $(item)
+// // // //     .closest('.js-item-element')
+// // // //     .data('item-id');
+// // // // };
+
+// // // // const handleDeleteItemClicked = function () {
+// // // //   // like in `handleItemCheckClicked`, we use event delegation
+// // // //   $('.js-shopping-list').on('click', '.js-item-delete', event => {
+// // // //     // get the index of the item in store.items
+// // // //     const id = getItemIdFromElement(event.currentTarget);
+// // // //     // delete the item
+// // // //     store.findAndDelete(id);
+// // // //     // render the updated shopping list
+// // // //     render();
+// // // //   });
+// // // // };
+
+// // // // const handleEditShoppingItemSubmit = function () {
+// // // //   $('.js-shopping-list').on('submit', '.js-edit-item', event => {
+// // // //     event.preventDefault();
+// // // //     const id = getItemIdFromElement(event.currentTarget);
+// // // //     const itemName = $(event.currentTarget).find('.shopping-item').val();
+// // // //     store.findAndUpdateName(id, itemName);
+// // // //     render();
+// // // //   });
+// // // // };
+
+// // // // const handleItemCheckClicked = function () {
+// // // //   $('.js-shopping-list').on('click', '.js-item-toggle', event => {
+// // // //     const id = getItemIdFromElement(event.currentTarget);
+// // // //     store.findAndToggleChecked(id);
+// // // //     render();
+// // // //   });
+// // // // };
+
+// // // // const handleToggleFilterClick = function () {
+// // // //   $('.js-filter-checked').click(() => {
+// // // //     store.toggleCheckedFilter();
+// // // //     render();
+// // // //   });
+// // // // };
+
+// // // // const bindEventListeners = function () {
+// // // //   handleNewItemSubmit();
+// // // //   handleItemCheckClicked();
+// // // //   handleDeleteItemClicked();
+// // // //   handleEditShoppingItemSubmit();
+// // // //   handleToggleFilterClick();
+// // // // };
+// // // // // This object contains the only exposed methods from this module:
+// // // // export default {
+// // // //   render,
+// // // //   bindEventListeners
+// // // // };
+
+
+
+// // // // // import $ from 'jquery';
+
+// // // // // import store from './store';
+
+// // // // // const generateItemElement = function (item) {
+// // // // //   let itemTitle = `<span class="shopping-item shopping-item__checked">${item.name}</span>`;
+// // // // //   if (!item.checked) {
+// // // // //     itemTitle = `
+// // // // //       <form class="js-edit-item">
+// // // // //         <input class="shopping-item" type="text" value="${item.name}" />
+// // // // //       </form>
+// // // // //     `;
+// // // // //   }
+
+// // // // //   return `
+// // // // //     <li class="js-item-element" data-item-id="${item.id}">
+// // // // //       ${itemTitle}
+// // // // //       <div class="shopping-item-controls">
+// // // // //         <button class="shopping-item-toggle js-item-toggle">
+// // // // //           <span class="button-label">check</span>
+// // // // //         </button>
+// // // // //         <button class="shopping-item-delete js-item-delete">
+// // // // //           <span class="button-label">delete</span>
+// // // // //         </button>
+// // // // //       </div>
+// // // // //     </li>`;
+// // // // // };
+
+// // // // // const generateShoppingItemsString = function (shoppingList) {
+// // // // //   const items = shoppingList.map((item) => generateItemElement(item));
+// // // // //   return items.join('');
+// // // // // };
+
+// // // // // const render = function () {
+// // // // //   // Filter item list if store prop is true by item.checked === false
+// // // // //   let items = [...store.items];
+// // // // //   if (store.hideCheckedItems) {
+// // // // //     items = items.filter(item => !item.checked);
+// // // // //   }
+
+// // // // //   // render the shopping list in the DOM
+// // // // //   const shoppingListItemsString = generateShoppingItemsString(items);
+
+// // // // //   // insert that HTML into the DOM
+// // // // //   $('.js-shopping-list').html(shoppingListItemsString);
+// // // // // };
+
+// // // // // const handleNewItemSubmit = function () {
+// // // // //   $('#js-shopping-list-form').submit(function (event) {
+// // // // //     event.preventDefault();
+// // // // //     const newItemName = $('.js-shopping-list-entry').val();
+// // // // //     $('.js-shopping-list-entry').val('');
+// // // // //     store.addItem(newItemName);
+// // // // //     render();
+// // // // //   });
+// // // // // };
+
+// // // // // const getItemIdFromElement = function (item) {
+// // // // //   return $(item)
+// // // // //     .closest('.js-item-element')
+// // // // //     .data('item-id');
+// // // // // };
+
+// // // // // const handleDeleteItemClicked = function () {
+// // // // //   // like in `handleItemCheckClicked`, we use event delegation
+// // // // //   $('.js-shopping-list').on('click', '.js-item-delete', event => {
+// // // // //     // get the index of the item in store.items
+// // // // //     const id = getItemIdFromElement(event.currentTarget);
+// // // // //     // delete the item
+// // // // //     store.findAndDelete(id);
+// // // // //     // render the updated shopping list
+// // // // //     render();
+// // // // //   });
+// // // // // };
+
+// // // // // const handleEditShoppingItemSubmit = function () {
+// // // // //   $('.js-shopping-list').on('submit', '.js-edit-item', event => {
+// // // // //     event.preventDefault();
+// // // // //     const id = getItemIdFromElement(event.currentTarget);
+// // // // //     const itemName = $(event.currentTarget).find('.shopping-item').val();
+// // // // //     store.findAndUpdateName(id, itemName);
+// // // // //     render();
+// // // // //   });
+// // // // // };
+
+// // // // // const handleItemCheckClicked = function () {
+// // // // //   $('.js-shopping-list').on('click', '.js-item-toggle', event => {
+// // // // //     const id = getItemIdFromElement(event.currentTarget);
+// // // // //     store.findAndToggleChecked(id);
+// // // // //     render();
+// // // // //   });
+// // // // // };
+
+// // // // // const handleToggleFilterClick = function () {
+// // // // //   $('.js-filter-checked').click(() => {
+// // // // //     store.toggleCheckedFilter();
+// // // // //     render();
+// // // // //   });
+// // // // // };
+
+// // // // // const bindEventListeners = function () {
+// // // // //   handleNewItemSubmit();
+// // // // //   handleItemCheckClicked();
+// // // // //   handleDeleteItemClicked();
+// // // // //   handleEditShoppingItemSubmit();
+// // // // //   handleToggleFilterClick();
+// // // // // };
+// // // // // // This object contains the only exposed methods from this module:
+// // // // // export default {
+// // // // //   render,
+// // // // //   bindEventListeners
+// // // // // };
